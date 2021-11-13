@@ -83,9 +83,10 @@ uint8_t     UserRecvBuff1[USART1_RECV_LEN_MAX];
 
 uint8_t     USART2_SendBuff[USART2_SEND_LEN_MAX];
 uint8_t     USART2_RecvBuff[USART2_RECV_LEN_MAX];
-uint8_t     UserRecvBuff2[USART2_RECV_LEN_MAX];
+//uint8_t     UserRecvBuff2[USART2_RECV_LEN_MAX];
 
 /**********GY953的相关变量*********/
+/*
 int16_t   AccX       = 0;		//加速度值
 int16_t   AccY       = 0;
 int16_t   AccZ       = 0;
@@ -100,12 +101,14 @@ int16_t   MgY        = 0;
 int16_t   MgZ        = 0;
 
 int16_t   Roll       = 0;		//欧拉角值*100
+*/
 // pitch 小于 0 说明向下倾斜
 int16_t   Pitch      = 0;
 int16_t   Yaw        = 0;
 
 BTSTAT bs;
 int16_t speed1, speed2;
+uint8_t isunstable = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -116,7 +119,7 @@ static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
-void Check_Sensor_Value(void);
+void Init_Eular(int16_t p, int16_t y);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -475,7 +478,6 @@ void MotoCtrl_SetValue(int16_t value, int16_t motor) {
     if ( motor==MOTOR_2 || !~motor ){
       // 实际设置PWM的值是 100 - 500
       sConfigOC.Pulse = value+300;
-      speed1 = value;
       HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_1);
     	if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK) Error_Handler();
     	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
@@ -484,20 +486,18 @@ void MotoCtrl_SetValue(int16_t value, int16_t motor) {
     if ( motor==MOTOR_1 || !~motor ){
       // 实际设置PWM的值是 100 - 500
       sConfigOC.Pulse = -value+300;
-      speed2 = value;
     	HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_4);
       if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_4) != HAL_OK) Error_Handler();
       HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
     }
 }
 
-void MotoCtrl_AddValue(int16_t value, int16_t motor) {
-  if(motor==MOTOR_1||!~motor) speed1 += value;
-  if(motor==MOTOR_2||!~motor) speed2 += value;
-}
-
 void GY_UART_Init(void) {
   HAL_UART_Transmit_IT(&huart1, GY_T_EUR, sizeof(GY_T_EUR)-1);
+  HAL_Delay(1);
+  HAL_UART_Transmit_IT(&huart1, GY_T_RO, sizeof(GY_T_RO)-1);
+  HAL_Delay(100);
+  HAL_UART_Transmit_IT(&huart1, GY_FIX_ACC, sizeof(GY_FIX_ACC)-1);
 }
 
 void GY_UARTPackage_Unpack(void) {
@@ -514,88 +514,91 @@ void GY_UARTPackage_Unpack(void) {
   int16_t Z = __builtin_bswap16(*(uint16_t*)(rawd+4));
   switch(gf->Type) {
     case GY_ACC:
-      AccX = X; AccY = Y; AccZ = Z;
+      //AccX = X; AccY = Y; AccZ = Z;
       //HAL_UART_Transmit_IT(&huart2, "recv acc.\n", 10);
     break;
     case GY_RO:
-      GyroX = X; GyroY = Y; GyroZ = Z;
+      //GyroX = X; GyroY = Y; GyroZ = Z;
+      if(Y>128 || Y<-128 || (Y>-4&&Y<4)) {
+        isunstable = 1;
+        MotoCtrl_SetValue(0, MOTOR_ALL);
+      } else isunstable = 0;
       //HAL_UART_Transmit_IT(&huart2, "recv ro.\n", 9);
     break;
     case GY_MG:
-      MgX = X; MgY = Y; MgZ = Z;
+      //MgX = X; MgY = Y; MgZ = Z;
       //HAL_UART_Transmit_IT(&huart2, "recv mg.\n", 9);
     break;
     case GY_EUR:
-      Roll = X; Pitch = Y; Yaw = Z;
+      //Roll = X;
+      Pitch = Y; Yaw = Z;
       //HAL_UART_Transmit_IT(&huart2, "recv eur.\n", 10);
-      Check_Sensor_Value();
+      Init_Eular(Y, Z);
     break;
     default: break;
   }
 }
 
-void Check_Sensor_Value(void) {
-  char sndbuf[256];
-  sndbuf[0] = 0;
-  static int16_t yinit, pinit;
+static int16_t yinit, pinit;
+void Init_Eular(int16_t p, int16_t y) {
   static uint16_t isinit = 1;
-  int16_t diff1 = 0, diff2 = 0;
   if(isinit && (Pitch||Yaw)) {
+    char sndbuf[256];
+    sndbuf[0] = 0;
     isinit = 0;
     yinit = Yaw;
     pinit = Pitch;
     sprintf(sndbuf, "[Init] roll: %d, pitch: %d, yaw: %d\n", Roll, Pitch, Yaw);
-  } else {
-    // 向右偏
-    if(Yaw-yinit<-32) {
-      diff1 -= 2;
-      diff2 += 2;
-      //sprintf(sndbuf, "[%d] Fix to left.\n", Yaw-yinit);
-    }
-    // 向左偏
-    else if(Yaw-yinit>32) {
-      diff1 += 2;
-      diff2 -= 2;
-      //sprintf(sndbuf, "[%d] Fix to right.\n", Yaw-yinit);
-    }
-    // 向上偏
-    if(Pitch-pinit>64) {
-      diff1 += 16;
-      diff2 += 16;
-      //sprintf(sndbuf, "[%d] Fix to down.\n", Pitch-pinit);
-    }
-    // 向下偏
-    else if(Pitch-pinit<-64) {
-      diff1 -= 16;
-      diff2 -= 16;
-      //sprintf(sndbuf, "[%d] Fix to up.\n", Pitch-pinit);
-    }
+    int sndlen = strlen(sndbuf) + 1;
+    if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, sndbuf, sndlen);
   }
-  if(diff1) MotoCtrl_AddValue(diff1, MOTOR_1);
-  else MotoCtrl_SetValue(0, MOTOR_1);
-  if(diff2) MotoCtrl_AddValue(diff2, MOTOR_2);
-  else MotoCtrl_SetValue(0, MOTOR_2);
+}
+
+void Calc_Speed(void) {
+  char sndbuf[256];
+  int16_t dp = Pitch-pinit;
+  int16_t dy = Yaw-yinit;
+  int16_t d1 = 0, d2 = 0;
+  if(dy<-32 || dy>32) {
+    if(dy<-200) dy = -200;
+    else if(dy>200) dy = 200;
+    d1 += dy/2;
+    d2 += dy/4;
+  }
+  if(dp<-64 || dp>64) {
+    if(dp<-200) dp = -200;
+    else if(dp>200) dp = 200;
+    d1 += dp/2;
+    d2 += dp/2;
+  }
+  if(d1<-200) d1 = -200;
+  else if(d1>200) d1 = 200;
+  if(d2<-200) d2 = -200;
+  else if(d2>200) d2 = 200;
+  speed1 = d1;
+  speed2 = d2;
+  sprintf(sndbuf, "[Calc] speed1: %d, speed2: %d\n", d1, d2);
   int sndlen = strlen(sndbuf) + 1;
   if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, sndbuf, sndlen);
 }
 
-void Bluetooth_Recv(void) {
+void Bluetooth_Recv(uint8_t cmd) {
   if(bs.isstarted) {
-    switch(UserRecvBuff2[0]) {
+    switch(cmd) {
       case CMD_FRNT: MotoCtrl_SetValue(bs.speed, MOTOR_ALL); break;
       case CMD_BACK: MotoCtrl_SetValue(-bs.speed, MOTOR_ALL); break;
       case CMD_LEFT: MotoCtrl_SetValue(bs.speed>>1, MOTOR_1); MotoCtrl_SetValue(bs.speed, MOTOR_2); break;
       case CMD_RGHT: MotoCtrl_SetValue(bs.speed, MOTOR_1); MotoCtrl_SetValue(bs.speed>>1, MOTOR_2); break;
       case CMD_STOP: if(bs.cmd != CMD_STOP) MotoCtrl_SetValue(0, MOTOR_ALL); else bs.isstarted = 0; break;
       case CMD_LOCK: bs.islocked = ~bs.islocked; break;
-      default: bs.speed = (int)((uint8_t*)UserRecvBuff2[0])<<1; break;
+      default: bs.speed = ((int)cmd)<<1; break;
     }
-  } else if(UserRecvBuff2[0] == CMD_STAT) {
+  } else if(cmd == CMD_STAT) {
     bs.isstarted = 1;
     bs.speed = 50;
     MotoCtrl_SetValue(50, MOTOR_ALL);
   }
-  bs.cmd = UserRecvBuff2[0];
+  bs.cmd = cmd;
 }
 /* USER CODE END 4 */
 

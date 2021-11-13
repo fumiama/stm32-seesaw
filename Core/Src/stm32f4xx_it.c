@@ -66,10 +66,11 @@ extern uint8_t     UserRecvBuff1[USART1_RECV_LEN_MAX];
 
 extern uint8_t     USART2_SendBuff[USART2_SEND_LEN_MAX];
 extern uint8_t     USART2_RecvBuff[USART2_RECV_LEN_MAX];
-extern uint8_t     UserRecvBuff2[USART2_RECV_LEN_MAX];
+//extern uint8_t     UserRecvBuff2[USART2_RECV_LEN_MAX];
 
 extern BTSTAT bs;
 extern int16_t speed1, speed2;
+extern uint8_t isunstable;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -269,15 +270,24 @@ void USART2_IRQHandler(void)
 /* USER CODE BEGIN 1 */
 static uint8_t isinit = 0;
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-  static uint8_t tick;
-  if (isinit && !bs.isstarted && htim->Instance == TIM2 && !(tick++%64)) {
-    //char sndbuf[256];
-    //sndbuf[0] = 0;
-    //sprintf(sndbuf, "[Tick] 1: %d, 2: %d\n", speed1, speed2);
-    if(speed1) MotoCtrl_SetValue(speed1, MOTOR_1);
-    if(speed2) MotoCtrl_SetValue(speed2, MOTOR_2);
-    //int sndlen = strlen(sndbuf) + 1;
-    //if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, sndbuf, sndlen);
+  static uint16_t tick, rate = 400;
+  if (isinit && !bs.isstarted && !isunstable && htim->Instance == TIM2 && !(tick%64)) {
+    int16_t tmod = tick%1024;
+    if(!tmod) {
+      Calc_Speed();
+      int16_t sav = (speed1+speed2)/2;
+      if(sav<0) sav = -sav;
+      rate = sav*2;
+    } else if(tmod < rate) {
+      if(tmod > rate/2) {
+        if(speed1) MotoCtrl_SetValue(speed1*200*(rate-tmod)/rate/2, MOTOR_1);
+        if(speed2) MotoCtrl_SetValue(speed2*200*(rate-tmod)/rate/2, MOTOR_2);
+      } else {
+        if(speed1) MotoCtrl_SetValue(speed1*200*tmod/rate/2, MOTOR_1);
+        if(speed2) MotoCtrl_SetValue(speed2*200*tmod/rate/2, MOTOR_2);
+      }
+    }
+    tick++;
   }
 }
 
@@ -302,8 +312,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART2) {
     // 在这里添加 串口2 的接收中断处理程序，原理与上面的  串口1 的接收中断处理程序 一样
     // 这里就不再重复解释
-    UserRecvBuff2[0] = USART2_RecvBuff[0];
-    Bluetooth_Recv();
+    Bluetooth_Recv(USART2_RecvBuff[0]);
     // HAL_UART_Receive_IT 接收中断只有效1次，需要再次开启，才能再次接收串口数据
     while(HAL_UART_Receive_IT(&huart2, USART2_RecvBuff, USART2_RECV_LEN_MAX) != HAL_OK);
   }

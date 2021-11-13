@@ -65,10 +65,10 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
 void MotoCtrl_SetValue(int16_t value, int16_t motor);
-void MotoCtrl_AddValue(int16_t value, int16_t motor);
 void GY_UARTPackage_Unpack(void);
 void GY_UART_Init(void);
-void Bluetooth_Recv(void);
+void Bluetooth_Recv(uint8_t cmd);
+void Calc_Speed(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
