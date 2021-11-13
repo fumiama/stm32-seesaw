@@ -271,7 +271,13 @@ static uint8_t isinit = 0;
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
   static uint8_t tick;
   if (isinit && !bs.isstarted && htim->Instance == TIM2 && !(tick++%64)) {
-    MotoCtrl_FluentMove(16);
+    //char sndbuf[256];
+    //sndbuf[0] = 0;
+    //sprintf(sndbuf, "[Tick] 1: %d, 2: %d\n", speed1, speed2);
+    if(speed1) MotoCtrl_SetValue(speed1, MOTOR_1);
+    if(speed2) MotoCtrl_SetValue(speed2, MOTOR_2);
+    //int sndlen = strlen(sndbuf) + 1;
+    //if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, sndbuf, sndlen);
   }
 }
 
@@ -323,9 +329,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
             btnOn = 0;
             if(isinit) MotoCtrl_SetValue(0, MOTOR_ALL);
             else MotoCtrl_AddValue(20, MOTOR_ALL);
-            HAL_Delay(10);
             GY_UART_Init();
-            HAL_Delay(10);
             isinit = !isinit;
             HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin);
           }

@@ -496,25 +496,6 @@ void MotoCtrl_AddValue(int16_t value, int16_t motor) {
   if(motor==MOTOR_2||!~motor) speed2 += value;
 }
 
-void MotoCtrl_FluentMove(int16_t dur) {
-  MotoCtrl_SetValue(0, MOTOR_ALL);
-  for(int i = 0; i < dur; i++) {
-    if(speed1) MotoCtrl_SetValue((int)(speed1)*i/dur, MOTOR_1);
-    if(speed2) MotoCtrl_SetValue((int)(speed2)*i/dur, MOTOR_2);
-    HAL_Delay(10);
-  }
-  if(speed1) MotoCtrl_SetValue(speed1, MOTOR_1);
-  if(speed2) MotoCtrl_SetValue(speed2, MOTOR_2);
-  HAL_Delay(dur);
-  for(int i = dur-1; i > 0; i--) {
-    if(speed1) MotoCtrl_SetValue((int)(speed1)*i/dur, MOTOR_1);
-    if(speed2) MotoCtrl_SetValue((int)(speed2)*i/dur, MOTOR_2);
-    HAL_Delay(10);
-  }
-  if(speed1) MotoCtrl_SetValue(0, MOTOR_1);
-  if(speed2) MotoCtrl_SetValue(0, MOTOR_2);
-}
-
 void GY_UART_Init(void) {
   HAL_UART_Transmit_IT(&huart1, GY_T_EUR, sizeof(GY_T_EUR)-1);
 }
@@ -569,29 +550,31 @@ void Check_Sensor_Value(void) {
     if(Yaw-yinit<-32) {
       diff1 -= 2;
       diff2 += 2;
-      sprintf(sndbuf, "[%d] Fix to left.\n", Yaw-yinit);
+      //sprintf(sndbuf, "[%d] Fix to left.\n", Yaw-yinit);
     }
     // 向左偏
     else if(Yaw-yinit>32) {
       diff1 += 2;
       diff2 -= 2;
-      sprintf(sndbuf, "[%d] Fix to right.\n", Yaw-yinit);
+      //sprintf(sndbuf, "[%d] Fix to right.\n", Yaw-yinit);
     }
     // 向上偏
     if(Pitch-pinit>64) {
-      diff1 += 4;
-      diff2 += 4;
-      sprintf(sndbuf, "[%d] Fix to down.\n", Pitch-pinit);
+      diff1 += 16;
+      diff2 += 16;
+      //sprintf(sndbuf, "[%d] Fix to down.\n", Pitch-pinit);
     }
     // 向下偏
     else if(Pitch-pinit<-64) {
-      diff1 -= 4;
-      diff2 -= 4;
-      sprintf(sndbuf, "[%d] Fix to up.\n", Pitch-pinit);
+      diff1 -= 16;
+      diff2 -= 16;
+      //sprintf(sndbuf, "[%d] Fix to up.\n", Pitch-pinit);
     }
   }
   if(diff1) MotoCtrl_AddValue(diff1, MOTOR_1);
+  else MotoCtrl_SetValue(0, MOTOR_1);
   if(diff2) MotoCtrl_AddValue(diff2, MOTOR_2);
+  else MotoCtrl_SetValue(0, MOTOR_2);
   int sndlen = strlen(sndbuf) + 1;
   if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, sndbuf, sndlen);
 }
