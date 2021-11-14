@@ -67,6 +67,7 @@ void Error_Handler(void);
 void MotoCtrl_SetValue(int16_t value, int16_t motor);
 void GY_UARTPackage_Unpack(void);
 void GY_UART_Init(void);
+void GY_UART_Switch(void);
 void Bluetooth_Recv(uint8_t cmd);
 void Calc_Speed(void);
 /* USER CODE END EFP */

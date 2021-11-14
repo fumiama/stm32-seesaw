@@ -270,24 +270,25 @@ void USART2_IRQHandler(void)
 /* USER CODE BEGIN 1 */
 static uint8_t isinit = 0;
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-  static uint16_t tick, rate = 400;
-  if (isinit && !bs.isstarted && !isunstable && htim->Instance == TIM2 && !(tick%64)) {
-    int16_t tmod = tick%1024;
-    if(!tmod) {
-      Calc_Speed();
-      int16_t sav = (speed1+speed2)/2;
-      if(sav<0) sav = -sav;
-      rate = sav*2;
-    } else if(tmod < rate) {
-      if(tmod > rate/2) {
-        if(speed1) MotoCtrl_SetValue(speed1*200*(rate-tmod)/rate/2, MOTOR_1);
-        if(speed2) MotoCtrl_SetValue(speed2*200*(rate-tmod)/rate/2, MOTOR_2);
-      } else {
-        if(speed1) MotoCtrl_SetValue(speed1*200*tmod/rate/2, MOTOR_1);
-        if(speed2) MotoCtrl_SetValue(speed2*200*tmod/rate/2, MOTOR_2);
+  static uint16_t tick = 0, tickunstable = 0, rate = 256;
+  if(htim->Instance == TIM2) {
+    if (isinit && !bs.isstarted) {
+      if(isunstable) {
+        if(!tickunstable++) rate >>= 1;
+        if(!(tickunstable&1023)) isunstable = tickunstable = 0;
+      } else if(!(tick++&15)) {
+        int16_t tmod = tick&511;
+        tickunstable = 0;
+        if(tmod==1) {
+          Calc_Speed();
+          if(speed1) MotoCtrl_SetValue(speed1, MOTOR_1);
+          if(speed2) MotoCtrl_SetValue(speed2, MOTOR_2);
+        } else if(tmod==rate+1) {
+          MotoCtrl_SetValue(0, MOTOR_ALL);
+          GY_UART_Switch();
+        }
       }
     }
-    tick++;
   }
 }
 
@@ -337,7 +338,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
             }
             btnOn = 0;
             if(isinit) MotoCtrl_SetValue(0, MOTOR_ALL);
-            else MotoCtrl_AddValue(20, MOTOR_ALL);
+            else MotoCtrl_SetValue(20, MOTOR_ALL);
             GY_UART_Init();
             isinit = !isinit;
             HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin);

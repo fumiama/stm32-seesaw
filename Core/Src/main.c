@@ -493,11 +493,12 @@ void MotoCtrl_SetValue(int16_t value, int16_t motor) {
 }
 
 void GY_UART_Init(void) {
-  HAL_UART_Transmit_IT(&huart1, GY_T_EUR, sizeof(GY_T_EUR)-1);
-  HAL_Delay(1);
-  HAL_UART_Transmit_IT(&huart1, GY_T_RO, sizeof(GY_T_RO)-1);
-  HAL_Delay(100);
-  HAL_UART_Transmit_IT(&huart1, GY_FIX_ACC, sizeof(GY_FIX_ACC)-1);
+  HAL_UART_Transmit_IT(&huart1, GY_T_EUR GY_FIX_ACC, sizeof(GY_T_EUR GY_FIX_ACC)-1);
+}
+
+void GY_UART_Switch(void) {
+  //HAL_UART_Transmit_IT(&huart2, "switch.\n", 8);
+  HAL_UART_Transmit_IT(&huart1, GY_T_RO GY_T_EUR, sizeof(GY_T_RO GY_T_EUR)-1);
 }
 
 void GY_UARTPackage_Unpack(void) {
@@ -519,7 +520,7 @@ void GY_UARTPackage_Unpack(void) {
     break;
     case GY_RO:
       //GyroX = X; GyroY = Y; GyroZ = Z;
-      if(Y>128 || Y<-128 || (Y>-4&&Y<4)) {
+      if(Y>32 || Y<-32) {
         isunstable = 1;
         MotoCtrl_SetValue(0, MOTOR_ALL);
       } else isunstable = 0;
@@ -530,8 +531,7 @@ void GY_UARTPackage_Unpack(void) {
       //HAL_UART_Transmit_IT(&huart2, "recv mg.\n", 9);
     break;
     case GY_EUR:
-      //Roll = X;
-      Pitch = Y; Yaw = Z;
+      //Roll = X; Pitch = Y; Yaw = Z;
       //HAL_UART_Transmit_IT(&huart2, "recv eur.\n", 10);
       Init_Eular(Y, Z);
     break;
@@ -542,39 +542,35 @@ void GY_UARTPackage_Unpack(void) {
 static int16_t yinit, pinit;
 void Init_Eular(int16_t p, int16_t y) {
   static uint16_t isinit = 1;
-  if(isinit && (Pitch||Yaw)) {
-    char sndbuf[256];
-    sndbuf[0] = 0;
-    isinit = 0;
-    yinit = Yaw;
-    pinit = Pitch;
-    sprintf(sndbuf, "[Init] roll: %d, pitch: %d, yaw: %d\n", Roll, Pitch, Yaw);
-    int sndlen = strlen(sndbuf) + 1;
-    if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, sndbuf, sndlen);
+  char sndbuf[256];
+  sndbuf[0] = 0;
+  if(isinit) {
+    if(p||y) {
+      isinit = 0;
+      Pitch = pinit = p;
+      Yaw = yinit = y;
+      sprintf(sndbuf, "[Init] pitch: %d, yaw: %d\n", p, y);
+    }
+  } else {
+    Pitch = (Pitch + p) / 2;
+    Yaw = (Yaw + y) / 2;
+    //sprintf(sndbuf, "[Eulr] pitch: %d, yaw: %d\n", Pitch, Yaw);
   }
+  int sndlen = strlen(sndbuf) + 1;
+  if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, sndbuf, sndlen);
 }
 
 void Calc_Speed(void) {
   char sndbuf[256];
+  sndbuf[0] = 0;
   int16_t dp = Pitch-pinit;
-  int16_t dy = Yaw-yinit;
   int16_t d1 = 0, d2 = 0;
-  if(dy<-32 || dy>32) {
-    if(dy<-200) dy = -200;
-    else if(dy>200) dy = 200;
-    d1 += dy/2;
-    d2 += dy/4;
-  }
   if(dp<-64 || dp>64) {
     if(dp<-200) dp = -200;
     else if(dp>200) dp = 200;
-    d1 += dp/2;
-    d2 += dp/2;
+    d1 = dp>>3;
+    d2 = dp>>3;
   }
-  if(d1<-200) d1 = -200;
-  else if(d1>200) d1 = 200;
-  if(d2<-200) d2 = -200;
-  else if(d2>200) d2 = 200;
   speed1 = d1;
   speed2 = d2;
   sprintf(sndbuf, "[Calc] speed1: %d, speed2: %d\n", d1, d2);
