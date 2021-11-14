@@ -119,7 +119,7 @@ static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
-void Init_Eular(int16_t p, int16_t y);
+void Handle_Eular(int16_t p, int16_t y);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -493,7 +493,7 @@ void MotoCtrl_SetValue(int16_t value, int16_t motor) {
 }
 
 void GY_UART_Init(void) {
-  HAL_UART_Transmit_IT(&huart1, GY_T_EUR GY_FIX_ACC, sizeof(GY_T_EUR GY_FIX_ACC)-1);
+  HAL_UART_Transmit_IT(&huart1, GY_T_RO GY_FIX_ACC, sizeof(GY_T_RO GY_FIX_ACC)-1);
 }
 
 void GY_UART_Switch(void) {
@@ -520,7 +520,7 @@ void GY_UARTPackage_Unpack(void) {
     break;
     case GY_RO:
       //GyroX = X; GyroY = Y; GyroZ = Z;
-      if(Y>32 || Y<-32) {
+      if(Y>32||Y<-32) {
         isunstable = 1;
         MotoCtrl_SetValue(0, MOTOR_ALL);
       } else isunstable = 0;
@@ -533,14 +533,14 @@ void GY_UARTPackage_Unpack(void) {
     case GY_EUR:
       //Roll = X; Pitch = Y; Yaw = Z;
       //HAL_UART_Transmit_IT(&huart2, "recv eur.\n", 10);
-      Init_Eular(Y, Z);
+      Handle_Eular(Y, Z);
     break;
     default: break;
   }
 }
 
-static int16_t yinit, pinit;
-void Init_Eular(int16_t p, int16_t y) {
+static int16_t yinit, pinit, isreset = 0;
+void Handle_Eular(int16_t p, int16_t y) {
   static uint16_t isinit = 1;
   char sndbuf[256];
   sndbuf[0] = 0;
@@ -551,6 +551,13 @@ void Init_Eular(int16_t p, int16_t y) {
       Yaw = yinit = y;
       sprintf(sndbuf, "[Init] pitch: %d, yaw: %d\n", p, y);
     }
+  } else if(isreset) {
+    if(p||y) {
+      isinit = 0;
+      Pitch = p;
+      Yaw = y;
+      sprintf(sndbuf, "[Reset] pitch: %d, yaw: %d\n", p, y);
+    }
   } else {
     Pitch = (Pitch + p) / 2;
     Yaw = (Yaw + y) / 2;
@@ -560,17 +567,28 @@ void Init_Eular(int16_t p, int16_t y) {
   if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, sndbuf, sndlen);
 }
 
+void Reset_Eular(void) {
+  isreset = 1;
+}
+
+#define YAWEDGE 64
+#define PIHEDGE 64
 void Calc_Speed(void) {
   char sndbuf[256];
   sndbuf[0] = 0;
   int16_t dp = Pitch-pinit;
+  int16_t dy = Yaw-yinit;
   int16_t d1 = 0, d2 = 0;
-  if(dp<-64 || dp>64) {
-    if(dp<-200) dp = -200;
-    else if(dp>200) dp = 200;
-    d1 = dp>>3;
-    d2 = dp>>3;
+  if(dy<-YAWEDGE||dy>YAWEDGE) {
+    d1 += dy>>4;
+    d2 += dy>>5;
   }
+  if(dp<-PIHEDGE||dp>PIHEDGE) {
+    d1 += dp>>3;
+    d2 += dp>>3;
+  }
+  while(d1<-200||d1>200) d1>>=1;
+  while(d2<-200||d2>200) d2>>=1;
   speed1 = d1;
   speed2 = d2;
   sprintf(sndbuf, "[Calc] speed1: %d, speed2: %d\n", d1, d2);

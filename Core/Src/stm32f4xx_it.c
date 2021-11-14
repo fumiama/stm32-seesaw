@@ -268,24 +268,40 @@ void USART2_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+// CIRCLE_TICKS 必须大于 128
+#define CIRCLE_TICKS 512
 static uint8_t isinit = 0;
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-  static uint16_t tick = 0, tickunstable = 0, rate = 256;
+  static uint16_t tick = CIRCLE_TICKS>>1, hasreducerate = 1, rate = CIRCLE_TICKS>>1;
+  static uint8_t not_first_unstable = 0;
   if(htim->Instance == TIM2) {
     if (isinit && !bs.isstarted) {
       if(isunstable) {
-        if(!tickunstable++) rate >>= 1;
-        if(!(tickunstable&1023)) isunstable = tickunstable = 0;
-      } else if(!(tick++&15)) {
-        int16_t tmod = tick&511;
-        tickunstable = 0;
-        if(tmod==1) {
+        if(!not_first_unstable) {
+          not_first_unstable = 1;
+        }
+        if(!hasreducerate) {
+          hasreducerate = 1;
+          if(!rate) {
+            rate = CIRCLE_TICKS>>1;
+            not_first_unstable = 0;
+            hasreducerate = 1;
+          } else rate -= CIRCLE_TICKS>>4;
+          tick = rate;
+        }
+      } else if(not_first_unstable && rate) {
+        int16_t tmod = tick++&(CIRCLE_TICKS-1);
+        if(hasreducerate) hasreducerate = 0;
+        if(!tmod) {
           Calc_Speed();
-          if(speed1) MotoCtrl_SetValue(speed1, MOTOR_1);
-          if(speed2) MotoCtrl_SetValue(speed2, MOTOR_2);
-        } else if(tmod==rate+1) {
+          MotoCtrl_SetValue(speed1, MOTOR_1);
+          MotoCtrl_SetValue(speed2, MOTOR_2);
+          GY_UART_Switch();  // 切换到 RO
+        } else if(tmod==rate) {
           MotoCtrl_SetValue(0, MOTOR_ALL);
-          GY_UART_Switch();
+          GY_UART_Switch();  // 切换到 EUR
+        } else if(tmod==CIRCLE_TICKS-64) {
+          Reset_Eular();
         }
       }
     }
@@ -338,8 +354,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
             }
             btnOn = 0;
             if(isinit) MotoCtrl_SetValue(0, MOTOR_ALL);
-            else MotoCtrl_SetValue(20, MOTOR_ALL);
-            GY_UART_Init();
+            else {
+              MotoCtrl_SetValue(20, MOTOR_ALL);
+              HAL_Delay(100);
+              GY_UART_Init();
+            }
             isinit = !isinit;
             HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin);
           }
