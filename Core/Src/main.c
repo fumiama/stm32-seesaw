@@ -109,6 +109,8 @@ int16_t   Yaw        = 0;
 BTSTAT bs;
 int16_t speed1, speed2;
 uint8_t isunstable = 0;
+uint8_t isinit = 0;
+int16_t rate;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -493,15 +495,17 @@ void MotoCtrl_SetValue(int16_t value, int16_t motor) {
 }
 
 void GY_UART_Init(void) {
-  HAL_UART_Transmit_IT(&huart1, GY_T_RO GY_FIX_ACC, sizeof(GY_T_RO GY_FIX_ACC)-1);
+  HAL_UART_Transmit_IT(&huart1, GY_T_EUR GY_FIX_ACC, sizeof(GY_T_EUR GY_FIX_ACC)-1);
+  HAL_UART_Transmit_IT(&huart2, "[Init] GY to eur.\n", 18);
 }
 
 void GY_UART_Switch(void) {
   //HAL_UART_Transmit_IT(&huart2, "switch.\n", 8);
-  HAL_UART_Transmit_IT(&huart1, GY_T_RO GY_T_EUR, sizeof(GY_T_RO GY_T_EUR)-1);
+  HAL_UART_Transmit_IT(&huart1, GY_T_EUR GY_T_RO, sizeof(GY_T_EUR GY_T_RO)-1);
 }
 
 void GY_UARTPackage_Unpack(void) {
+  static int16_t stables = 0;
   GY953Frame* gf = (GY953Frame*)UserRecvBuff1;
   unsigned char s = 0;
   for(s = 0; s < USART1_RECV_LEN_MAX-5; s++) {
@@ -510,9 +514,9 @@ void GY_UARTPackage_Unpack(void) {
   }
   if(s == USART1_RECV_LEN_MAX-5) return;
   unsigned char* rawd = gf->RawData;
-  int16_t X = __builtin_bswap16(*(uint16_t*)(rawd));
+  //int16_t X = __builtin_bswap16(*(uint16_t*)(rawd));
   int16_t Y = __builtin_bswap16(*(uint16_t*)(rawd+2));
-  int16_t Z = __builtin_bswap16(*(uint16_t*)(rawd+4));
+  //int16_t Z = __builtin_bswap16(*(uint16_t*)(rawd+4));
   switch(gf->Type) {
     case GY_ACC:
       //AccX = X; AccY = Y; AccZ = Z;
@@ -520,11 +524,17 @@ void GY_UARTPackage_Unpack(void) {
     break;
     case GY_RO:
       //GyroX = X; GyroY = Y; GyroZ = Z;
-      if(Y>32||Y<-32) {
-        isunstable = 1;
-        MotoCtrl_SetValue(0, MOTOR_ALL);
-      } else isunstable = 0;
-      //HAL_UART_Transmit_IT(&huart2, "recv ro.\n", 9);
+      if((Y>rate||Y<-rate)) {
+        if(!isunstable) {
+          isunstable = 1;
+          MotoCtrl_SetValue(0, MOTOR_ALL);
+          HAL_UART_Transmit_IT(&huart2, "[State] unstable.\n", 18);
+        }
+        stables = 0;
+      } else if(isunstable && stables++>64) {
+        isunstable = stables =  0;
+        HAL_UART_Transmit_IT(&huart2, "[State] stable.\n", 16);
+      }
     break;
     case GY_MG:
       //MgX = X; MgY = Y; MgZ = Z;
@@ -533,34 +543,26 @@ void GY_UARTPackage_Unpack(void) {
     case GY_EUR:
       //Roll = X; Pitch = Y; Yaw = Z;
       //HAL_UART_Transmit_IT(&huart2, "recv eur.\n", 10);
-      Handle_Eular(Y, Z);
+      Handle_Eular(Y);
     break;
     default: break;
   }
 }
 
-static int16_t yinit, pinit, isreset = 0;
-void Handle_Eular(int16_t p, int16_t y) {
-  static uint16_t isinit = 1;
+static int16_t pinit, isreset = 0;
+void Handle_Eular(int16_t p) {
   char sndbuf[256];
   sndbuf[0] = 0;
-  if(isinit) {
-    if(p||y) {
-      isinit = 0;
-      Pitch = pinit = p;
-      Yaw = yinit = y;
-      sprintf(sndbuf, "[Init] pitch: %d, yaw: %d\n", p, y);
+  if(!isinit) {
+    if(p) {
+      Pitch = pinit = (pinit+p)/2;
+      sprintf(sndbuf, "[Init] pitch: %d.\n", p);
     }
   } else if(isreset) {
-    if(p||y) {
-      isinit = 0;
-      Pitch = p;
-      Yaw = y;
-      sprintf(sndbuf, "[Reset] pitch: %d, yaw: %d\n", p, y);
-    }
+    Pitch = p;
+    //sprintf(sndbuf, "[Reset] pitch: %d, yaw: %d\n", p, y);
   } else {
-    Pitch = (Pitch + p) / 2;
-    Yaw = (Yaw + y) / 2;
+    Pitch = (Pitch+p)/2;
     //sprintf(sndbuf, "[Eulr] pitch: %d, yaw: %d\n", Pitch, Yaw);
   }
   int sndlen = strlen(sndbuf) + 1;
@@ -569,27 +571,25 @@ void Handle_Eular(int16_t p, int16_t y) {
 
 void Reset_Eular(void) {
   isreset = 1;
+  HAL_Dealy(40);
+  isreset = 0;
 }
 
-#define YAWEDGE 64
-#define PIHEDGE 64
+#define PIHEDGE 16
 void Calc_Speed(void) {
   char sndbuf[256];
   sndbuf[0] = 0;
   int16_t dp = Pitch-pinit;
-  int16_t dy = Yaw-yinit;
-  int16_t d1 = 0, d2 = 0;
-  if(dy<-YAWEDGE||dy>YAWEDGE) {
-    d1 += dy>>4;
-    d2 += dy>>5;
-  }
+  int16_t d1, d2;
   if(dp<-PIHEDGE||dp>PIHEDGE) {
-    d1 += dp>>3;
-    d2 += dp>>3;
+    d1 = dp/PIHEDGE;
+    d2 = dp/PIHEDGE;
   }
-  while(d1<-200||d1>200) d1>>=1;
-  while(d2<-200||d2>200) d2>>=1;
-  speed1 = d1;
+  if(d1<-20) d1=-20;
+  else if(d1>20) d1=20;
+  if(d2<-20) d2=-20;
+  else if(d2>20) d2=20;
+  speed1 = d1?((d1>0)?d1+4:d1-4):0;
   speed2 = d2;
   sprintf(sndbuf, "[Calc] speed1: %d, speed2: %d\n", d1, d2);
   int sndlen = strlen(sndbuf) + 1;

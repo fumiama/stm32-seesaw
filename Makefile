@@ -22,7 +22,7 @@ TARGET = seesaw
 # debug build?
 DEBUG = 0
 # optimization
-OPT = -O2 -march=native
+OPT = -O3
 
 
 #######################################

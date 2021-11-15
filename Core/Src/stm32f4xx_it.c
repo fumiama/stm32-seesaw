@@ -23,6 +23,7 @@
 #include "stm32f4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -69,8 +70,9 @@ extern uint8_t     USART2_RecvBuff[USART2_RECV_LEN_MAX];
 //extern uint8_t     UserRecvBuff2[USART2_RECV_LEN_MAX];
 
 extern BTSTAT bs;
-extern int16_t speed1, speed2;
+extern int16_t speed1, speed2, rate;
 extern uint8_t isunstable;
+extern uint8_t isinit;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -270,41 +272,58 @@ void USART2_IRQHandler(void)
 /* USER CODE BEGIN 1 */
 // CIRCLE_TICKS 必须大于 128
 #define CIRCLE_TICKS 512
-static uint8_t isinit = 0;
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-  static uint16_t tick = CIRCLE_TICKS>>1, hasreducerate = 1, rate = CIRCLE_TICKS>>1;
+  static uint16_t tick = CIRCLE_TICKS-128, hasreducerate = 1;
   static uint8_t not_first_unstable = 0;
   if(htim->Instance == TIM2) {
+    char sndbuf[256];
+    sndbuf[0] = 0;
     if (isinit && !bs.isstarted) {
       if(isunstable) {
         if(!not_first_unstable) {
           not_first_unstable = 1;
+          sprintf(sndbuf, "[Tick] first unstable.\n");
         }
         if(!hasreducerate) {
           hasreducerate = 1;
-          if(!rate) {
+          if(rate<=0) {
             rate = CIRCLE_TICKS>>1;
             not_first_unstable = 0;
             hasreducerate = 1;
-          } else rate -= CIRCLE_TICKS>>4;
-          tick = rate;
+            sprintf(sndbuf, "[Tick] reset rate.\n");
+          } else {
+            rate -= CIRCLE_TICKS>>5;
+            sprintf(sndbuf, "[Tick] reduce rate.\n");
+          }
+          tick = CIRCLE_TICKS-128;
         }
       } else if(not_first_unstable && rate) {
         int16_t tmod = tick++&(CIRCLE_TICKS-1);
         if(hasreducerate) hasreducerate = 0;
         if(!tmod) {
           Calc_Speed();
-          MotoCtrl_SetValue(speed1, MOTOR_1);
-          MotoCtrl_SetValue(speed2, MOTOR_2);
           GY_UART_Switch();  // 切换到 RO
+          for(int i = 1; i <= 4; i++) {
+            MotoCtrl_SetValue(speed1*i/4, MOTOR_1);
+            MotoCtrl_SetValue(speed2*i/4, MOTOR_2);
+            HAL_Delay(10);
+          }
         } else if(tmod==rate) {
-          MotoCtrl_SetValue(0, MOTOR_ALL);
+          for(int i = 3; i >= 0; i--) {
+            MotoCtrl_SetValue(speed1*i/4, MOTOR_1);
+            MotoCtrl_SetValue(speed2*i/4, MOTOR_2);
+            HAL_Delay(10);
+          }
+          sprintf(sndbuf, "[Tick] stop motor.\n");
+        } else if(tmod==CIRCLE_TICKS-128) {
           GY_UART_Switch();  // 切换到 EUR
-        } else if(tmod==CIRCLE_TICKS-64) {
           Reset_Eular();
+          sprintf(sndbuf, "[Tick] reset eur.\n");
         }
       }
     }
+    int sndlen = strlen(sndbuf) + 1;
+    if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, sndbuf, sndlen);
   }
 }
 
@@ -353,13 +372,22 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
               if(!HAL_GPIO_ReadPin(UKEY_GPIO_Port, UKEY_Pin)) return;
             }
             btnOn = 0;
-            if(isinit) MotoCtrl_SetValue(0, MOTOR_ALL);
-            else {
-              MotoCtrl_SetValue(20, MOTOR_ALL);
-              HAL_Delay(100);
+            if(isinit) {
+              MotoCtrl_SetValue(0, MOTOR_ALL);
+              isinit = 0;
+            } else {
+              rate = CIRCLE_TICKS>>1;
               GY_UART_Init();
+              HAL_Delay(1024);
+              isinit = 1;
+              for(int i = 0; i<100; i++) {
+                MotoCtrl_SetValue(i, MOTOR_ALL);
+                HAL_Delay(10);
+              }
+              HAL_Delay(1024);
+              GY_UART_Switch();
+              HAL_UART_Transmit_IT(&huart2, "[Init] switch to ro.\n", 21);
             }
-            isinit = !isinit;
             HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin);
           }
         } else if(!pinState) {   // 按下
