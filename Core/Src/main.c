@@ -107,9 +107,8 @@ int16_t   Pitch      = 0;
 int16_t   Yaw        = 0;
 
 BTSTAT bs;
-int16_t speed1, speed2;
+int16_t speed1 = 50, speed2 = 24;
 uint8_t isunstable = 0;
-uint8_t isinit = 0;
 int16_t rate;
 /* USER CODE END PV */
 
@@ -121,7 +120,6 @@ static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
-void Handle_Eular(int16_t p);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -524,13 +522,14 @@ void GY_UARTPackage_Unpack(void) {
     break;
     case GY_RO:
       //GyroX = X; GyroY = Y; GyroZ = Z;
+      //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"recv ro.\n", 9);
       if((Y>rate||Y<-rate)) {
+        stables = 0;
         if(!isunstable) {
           isunstable = 1;
           MotoCtrl_SetValue(0, MOTOR_ALL);
           HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] unstable.\n", 18);
         }
-        stables = 0;
       } else if(isunstable && stables++>64) {
         isunstable = stables =  0;
         HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] stable.\n", 16);
@@ -541,57 +540,38 @@ void GY_UARTPackage_Unpack(void) {
       //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"recv mg.\n", 9);
     break;
     case GY_EUR:
-      //Roll = X; Pitch = Y; Yaw = Z;
+      //Roll = X;
+      Pitch = Y;
+      //Yaw = Z;
       //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"recv eur.\n", 10);
-      Handle_Eular(Y);
     break;
     default: break;
   }
 }
 
-static int16_t pinit, isreset = 0;
-void Handle_Eular(int16_t p) {
-  char sndbuf[256];
-  sndbuf[0] = 0;
-  if(!isinit) {
-    if(p) {
-      Pitch = pinit = (pinit+p)/2;
-      sprintf(sndbuf, "[Init] pitch: %d.\n", p);
-    }
-  } else if(isreset) {
-    Pitch = p;
-    //sprintf(sndbuf, "[Reset] pitch: %d, yaw: %d\n", p, y);
-  } else {
-    Pitch = (Pitch+p)/2;
-    //sprintf(sndbuf, "[Eulr] pitch: %d, yaw: %d\n", Pitch, Yaw);
-  }
-  int sndlen = strlen(sndbuf) + 1;
-  if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
-}
-
-void Reset_Eular(void) {
-  isreset = 1;
-  HAL_Delay(40);
-  isreset = 0;
-}
-
 #define PIHEDGE 16
 void Calc_Speed(void) {
+  static int16_t prevp = 0, middle = 0;
   char sndbuf[256];
   sndbuf[0] = 0;
-  int16_t dp = Pitch-pinit;
+  if(!prevp&&!middle) prevp = Pitch;
+  else {
+    middle = (prevp+Pitch)/2;
+    prevp = Pitch;
+  }
+  int16_t dp = Pitch-middle;
   int16_t d1 = 0, d2 = 0;
   if(dp<-PIHEDGE||dp>PIHEDGE) {
-    d1 = dp/PIHEDGE;
-    d2 = dp/PIHEDGE;
+    if(dp > 0) {
+      d1=50; d2=24;
+    }
+    else {
+      d1=-50; d2=-24;
+    }
   }
-  if(d1<-20) d1=-20;
-  else if(d1>20) d1=20;
-  if(d2<-20) d2=-20;
-  else if(d2>20) d2=20;
-  speed1 = d1?((d1>0)?d1+4:d1-4):0;
+  speed1 = d1;
   speed2 = d2;
-  sprintf(sndbuf, "[Calc] speed1: %d, speed2: %d\n", d1, d2);
+  sprintf(sndbuf, "[Calc] middle: %d, dp: %d.\n", middle, dp);
   int sndlen = strlen(sndbuf) + 1;
   if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
 }

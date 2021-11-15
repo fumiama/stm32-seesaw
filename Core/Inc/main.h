@@ -70,7 +70,6 @@ void GY_UART_Init(void);
 void GY_UART_Switch(void);
 void Bluetooth_Recv(uint8_t cmd);
 void Calc_Speed(void);
-void Reset_Eular(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
