@@ -323,7 +323,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
       }
     }
     int sndlen = strlen(sndbuf) + 1;
-    if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, sndbuf, sndlen);
+    if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
   }
 }
 
@@ -386,7 +386,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
               }
               HAL_Delay(1024);
               GY_UART_Switch();
-              HAL_UART_Transmit_IT(&huart2, "[Init] switch to ro.\n", 21);
+              HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[Init] switch to ro.\n", 21);
             }
             HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin);
           }

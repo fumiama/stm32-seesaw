@@ -121,7 +121,7 @@ static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
-void Handle_Eular(int16_t p, int16_t y);
+void Handle_Eular(int16_t p);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -495,13 +495,13 @@ void MotoCtrl_SetValue(int16_t value, int16_t motor) {
 }
 
 void GY_UART_Init(void) {
-  HAL_UART_Transmit_IT(&huart1, GY_T_EUR GY_FIX_ACC, sizeof(GY_T_EUR GY_FIX_ACC)-1);
-  HAL_UART_Transmit_IT(&huart2, "[Init] GY to eur.\n", 18);
+  HAL_UART_Transmit_IT(&huart1,  (uint8_t*)(GY_T_EUR GY_FIX_ACC), sizeof(GY_T_EUR GY_FIX_ACC)-1);
+  HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[Init] GY to eur.\n", 18);
 }
 
 void GY_UART_Switch(void) {
-  //HAL_UART_Transmit_IT(&huart2, "switch.\n", 8);
-  HAL_UART_Transmit_IT(&huart1, GY_T_EUR GY_T_RO, sizeof(GY_T_EUR GY_T_RO)-1);
+  //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"switch.\n", 8);
+  HAL_UART_Transmit_IT(&huart1, (uint8_t*)(GY_T_EUR GY_T_RO), sizeof(GY_T_EUR GY_T_RO)-1);
 }
 
 void GY_UARTPackage_Unpack(void) {
@@ -520,7 +520,7 @@ void GY_UARTPackage_Unpack(void) {
   switch(gf->Type) {
     case GY_ACC:
       //AccX = X; AccY = Y; AccZ = Z;
-      //HAL_UART_Transmit_IT(&huart2, "recv acc.\n", 10);
+      //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"recv acc.\n", 10);
     break;
     case GY_RO:
       //GyroX = X; GyroY = Y; GyroZ = Z;
@@ -528,21 +528,21 @@ void GY_UARTPackage_Unpack(void) {
         if(!isunstable) {
           isunstable = 1;
           MotoCtrl_SetValue(0, MOTOR_ALL);
-          HAL_UART_Transmit_IT(&huart2, "[State] unstable.\n", 18);
+          HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] unstable.\n", 18);
         }
         stables = 0;
       } else if(isunstable && stables++>64) {
         isunstable = stables =  0;
-        HAL_UART_Transmit_IT(&huart2, "[State] stable.\n", 16);
+        HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] stable.\n", 16);
       }
     break;
     case GY_MG:
       //MgX = X; MgY = Y; MgZ = Z;
-      //HAL_UART_Transmit_IT(&huart2, "recv mg.\n", 9);
+      //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"recv mg.\n", 9);
     break;
     case GY_EUR:
       //Roll = X; Pitch = Y; Yaw = Z;
-      //HAL_UART_Transmit_IT(&huart2, "recv eur.\n", 10);
+      //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"recv eur.\n", 10);
       Handle_Eular(Y);
     break;
     default: break;
@@ -566,12 +566,12 @@ void Handle_Eular(int16_t p) {
     //sprintf(sndbuf, "[Eulr] pitch: %d, yaw: %d\n", Pitch, Yaw);
   }
   int sndlen = strlen(sndbuf) + 1;
-  if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, sndbuf, sndlen);
+  if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
 }
 
 void Reset_Eular(void) {
   isreset = 1;
-  HAL_Dealy(40);
+  HAL_Delay(40);
   isreset = 0;
 }
 
@@ -580,7 +580,7 @@ void Calc_Speed(void) {
   char sndbuf[256];
   sndbuf[0] = 0;
   int16_t dp = Pitch-pinit;
-  int16_t d1, d2;
+  int16_t d1 = 0, d2 = 0;
   if(dp<-PIHEDGE||dp>PIHEDGE) {
     d1 = dp/PIHEDGE;
     d2 = dp/PIHEDGE;
@@ -593,7 +593,7 @@ void Calc_Speed(void) {
   speed2 = d2;
   sprintf(sndbuf, "[Calc] speed1: %d, speed2: %d\n", d1, d2);
   int sndlen = strlen(sndbuf) + 1;
-  if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, sndbuf, sndlen);
+  if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
 }
 
 void Bluetooth_Recv(uint8_t cmd) {
