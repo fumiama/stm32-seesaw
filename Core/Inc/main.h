@@ -69,7 +69,6 @@ void GY_UARTPackage_Unpack(void);
 void GY_UART_Init(void);
 void GY_UART_Switch(void);
 void Bluetooth_Recv(uint8_t cmd);
-int16_t Calc_Speed(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
@@ -106,6 +105,9 @@ typedef struct {              //GY953传感器的  数据帧结构体
 	unsigned char Length;       //要接收数据的长度
 	unsigned char RawData[];    //原始数据
 } GY953Frame;
+
+// CIRCLE_TICKS 必须大于 128
+#define CIRCLE_TICKS 512
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

@@ -108,8 +108,8 @@ int16_t   Yaw        = 0;
 
 BTSTAT bs;
 int16_t speed1 = 50, speed2 = 24;
-uint8_t isunstable = 0, isinpid = 0;
-int16_t rate;
+uint8_t isunstable = 0, isinpid = 0, isinit = 0;
+int16_t rate, tick = CIRCLE_TICKS-128;
 static int16_t middle = 0, prevp = 0;
 /* USER CODE END PV */
 
@@ -122,6 +122,7 @@ static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 static int16_t Calc_PID(int16_t y);
+static int Calc_Speed(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -506,15 +507,17 @@ void GY_UART_Switch(void) {
 
 void GY_UARTPackage_Unpack(void) {
   static int16_t stables = 0;
+  static uint8_t not_frist_init = 0;
   GY953Frame* gf = (GY953Frame*)UserRecvBuff1;
   unsigned char s = 0;
+  if(!isinit) return;
   for(s = 0; s < USART1_RECV_LEN_MAX-5; s++) {
     if(gf->Head != 0x5a5a) gf = (GY953Frame*)(UserRecvBuff1+s);
     else break;
   }
   if(s == USART1_RECV_LEN_MAX-5) return;
   unsigned char* rawd = gf->RawData;
-  int16_t speed;
+  int16_t speed, tmod;
   char sndbuf[256];
   sndbuf[0] = 0;
   //int16_t X = __builtin_bswap16(*(uint16_t*)(rawd));
@@ -528,16 +531,28 @@ void GY_UARTPackage_Unpack(void) {
     case GY_RO:
       //GyroX = X; GyroY = Y; GyroZ = Z;
       //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"recv ro.\n", 9);
-      if((Y>rate||Y<-rate)) {
-        stables = 0;
-        if(!isunstable) {
-          isunstable = 1;
-          MotoCtrl_SetValue(0, MOTOR_ALL);
-          HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] unstable.\n", 18);
+      if(!isinpid) {
+        if(Y>rate||Y<-rate) {
+          stables = 0;
+          if(!isunstable) {
+            isunstable = 1;
+            MotoCtrl_SetValue(0, MOTOR_ALL);
+            HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] unstable.\n", 18);
+            if(!not_frist_init) not_frist_init = 1;
+          }
+        } else if(isunstable && stables++>64) {
+          isunstable = stables =  0;
+          HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] stable.\n", 16);
+        } else if(not_frist_init && !bs.isstarted && !isunstable) {
+          tmod = tick++&(CIRCLE_TICKS-1);
+          if(tmod==CIRCLE_TICKS>>1) {
+            MotoCtrl_SetValue(0, MOTOR_ALL);
+            sprintf(sndbuf, "[GyUR] stop motor.\n");
+          } else if(tmod==CIRCLE_TICKS-128) {
+            GY_UART_Switch();  // ÇÐ»»µ½ EUR
+            sprintf(sndbuf, "[GyUR] switch to eur.\n");
+          }
         }
-      } else if(isunstable && stables++>64) {
-        isunstable = stables =  0;
-        HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] stable.\n", 16);
       }
     break;
     case GY_MG:
@@ -549,28 +564,45 @@ void GY_UARTPackage_Unpack(void) {
       Pitch = Y;
       if(isinpid) {
         speed = Calc_PID(Y);
-        if(speed>=-4 && speed <= 4) {
-          isinpid = speed = prevp = 0;
-          GY_UART_Switch();  // ÇÐ»»µ½ RO
-        }
-        sprintf(sndbuf, "[PID] speed: %d.\n", speed);
+        if(!speed) {
+          if(stables++>64) {
+            isinpid = middle = prevp = 0;
+            GY_UART_Switch();  // ÇÐ»»µ½ RO
+          }
+        } else tmod = 0;
+        sprintf(sndbuf, "[GyUR] speed: %d.\n", speed);
         MotoCtrl_SetValue(speed, MOTOR_ALL);
-        int sndlen = strlen(sndbuf) + 1;
-        if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
+      } else if(not_frist_init && !bs.isstarted && !isunstable) {
+        tmod = tick++&(CIRCLE_TICKS-1);
+        if(!tmod) {
+          isinpid = Calc_Speed();
+          if(!isinpid) {
+            GY_UART_Switch();  // ÇÐ»»µ½ RO
+            MotoCtrl_SetValue(speed1, MOTOR_1);
+            MotoCtrl_SetValue(speed2, MOTOR_2);
+            sprintf(sndbuf, "[GyUR] switch to ro.\n");
+          } else {
+            MotoCtrl_SetValue(0, MOTOR_ALL);
+            stables = 0;
+            sprintf(sndbuf, "[GyUR] enter into pid.\n");
+          }
+        }
       }
       //Yaw = Z;
       //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"recv eur.\n", 10);
     break;
     default: break;
   }
+  int sndlen = strlen(sndbuf) + 1;
+  if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
 }
 
-#define PID_KP 1.0f
+#define PID_KP 0.1f
 #define PID_KI 0.0f
-#define PID_KD 0.0f
+#define PID_KD 0.04f
 static int16_t Calc_PID(int16_t y) {
   static int16_t prev_dy = 0, int_sum = 0;
-  int16_t dy = middle - y;
+  int16_t dy = y - middle;
   int_sum += dy;
   int16_t out = PID_KP*(float)dy + PID_KI*(float)int_sum + PID_KD*(float)(dy-prev_dy);
   prev_dy = dy;
@@ -578,15 +610,17 @@ static int16_t Calc_PID(int16_t y) {
 }
 
 #define PIHEDGE 16
-int16_t Calc_Speed(void) {
+int Calc_Speed(void) {
   char sndbuf[256];
   sndbuf[0] = 0;
   if(!prevp) prevp = Pitch;
   else {
     middle = (prevp+Pitch)/2;
     prevp = Pitch;
+    return 1;
   }
   int16_t dp = Pitch-middle;
+  Pitch = 0;
   int16_t d1 = 0, d2 = 0;
   if(dp<-PIHEDGE||dp>PIHEDGE) {
     if(dp > 0) {
@@ -601,7 +635,7 @@ int16_t Calc_Speed(void) {
   sprintf(sndbuf, "[Calc] middle: %d, dp: %d.\n", middle, dp);
   int sndlen = strlen(sndbuf) + 1;
   if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
-  return prevp & middle;
+  return 0;
 }
 
 void Bluetooth_Recv(uint8_t cmd) {

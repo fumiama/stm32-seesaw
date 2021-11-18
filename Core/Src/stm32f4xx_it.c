@@ -43,7 +43,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-static uint8_t isinit = 0;
+extern uint8_t isinit;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -70,7 +70,7 @@ extern uint8_t     USART2_RecvBuff[USART2_RECV_LEN_MAX];
 //extern uint8_t     UserRecvBuff2[USART2_RECV_LEN_MAX];
 
 extern BTSTAT bs;
-extern int16_t speed1, speed2, rate;
+extern int16_t speed1, speed2, rate, tick;
 extern uint8_t isunstable, isinpid;
 /* USER CODE END EV */
 
@@ -269,46 +269,18 @@ void USART2_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
-// CIRCLE_TICKS 必须大于 128
-#define CIRCLE_TICKS 512
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-  static uint16_t tick = CIRCLE_TICKS-128, has_changed_tick = 0;
-  static uint8_t not_first_unstable = 0;
-  if(htim->Instance == TIM2) {
+  static uint8_t has_changed_tick = 0;
+  if(htim->Instance == TIM2 && isinit && !bs.isstarted && !isinpid) {
     char sndbuf[256];
     sndbuf[0] = 0;
-    if (isinit && !bs.isstarted &&!isinpid) {
-      if(isunstable) {
-        if(!not_first_unstable) {
-          not_first_unstable = 1;
-          sprintf(sndbuf, "[Tick] first unstable.\n");
-        }
-        if(!has_changed_tick) {
-          has_changed_tick = 1;
-          tick = CIRCLE_TICKS-128;
-        }
-      } else if(not_first_unstable) {
-        int16_t tmod = tick++&(CIRCLE_TICKS-1);
-        if(has_changed_tick) has_changed_tick = 0;
-        if(!tmod) {
-          isinpid = Calc_Speed();
-          if(!isinpid) {
-            GY_UART_Switch();  // 切换到 RO
-            MotoCtrl_SetValue(speed1, MOTOR_1);
-            MotoCtrl_SetValue(speed2, MOTOR_2);
-            sprintf(sndbuf, "[Tick] switch to ro.\n");
-          } else {
-            MotoCtrl_SetValue(0, MOTOR_ALL);
-            sprintf(sndbuf, "[Tick] enter into pid.\n");
-          }
-        } else if(tmod==CIRCLE_TICKS>>1) {
-          MotoCtrl_SetValue(0, MOTOR_ALL);
-          sprintf(sndbuf, "[Tick] stop motor.\n");
-        } else if(tmod==CIRCLE_TICKS-128) {
-          GY_UART_Switch();  // 切换到 EUR
-          sprintf(sndbuf, "[Tick] switch to eur.\n");
-        }
-      }
+    if(isunstable && !has_changed_tick) {
+      has_changed_tick = 0;
+      tick = CIRCLE_TICKS-128;
+      sprintf(sndbuf, "[Tick] change tick in unstable.\n");
+    } else if(has_changed_tick) {
+      has_changed_tick = 0;
+      sprintf(sndbuf, "[Tick] reset has_changed_tick.\n");
     }
     int sndlen = strlen(sndbuf) + 1;
     if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
