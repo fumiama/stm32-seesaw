@@ -69,7 +69,7 @@ void GY_UARTPackage_Unpack(void);
 void GY_UART_Init(void);
 void GY_UART_Switch(void);
 void Bluetooth_Recv(uint8_t cmd);
-void Calc_Speed(void);
+int16_t Calc_Speed(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

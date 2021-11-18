@@ -108,8 +108,9 @@ int16_t   Yaw        = 0;
 
 BTSTAT bs;
 int16_t speed1 = 50, speed2 = 24;
-uint8_t isunstable = 0;
+uint8_t isunstable = 0, isinpid = 0;
 int16_t rate;
+static int16_t middle = 0, prevp = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -120,6 +121,7 @@ static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
+static int16_t Calc_PID(int16_t y);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -512,6 +514,9 @@ void GY_UARTPackage_Unpack(void) {
   }
   if(s == USART1_RECV_LEN_MAX-5) return;
   unsigned char* rawd = gf->RawData;
+  int16_t speed;
+  char sndbuf[256];
+  sndbuf[0] = 0;
   //int16_t X = __builtin_bswap16(*(uint16_t*)(rawd));
   int16_t Y = __builtin_bswap16(*(uint16_t*)(rawd+2));
   //int16_t Z = __builtin_bswap16(*(uint16_t*)(rawd+4));
@@ -542,6 +547,17 @@ void GY_UARTPackage_Unpack(void) {
     case GY_EUR:
       //Roll = X;
       Pitch = Y;
+      if(isinpid) {
+        speed = Calc_PID(Y);
+        if(speed>=-4 && speed <= 4) {
+          isinpid = speed = prevp = 0;
+          GY_UART_Switch();  // ÇÐ»»µ½ RO
+        }
+        sprintf(sndbuf, "[PID] speed: %d.\n", speed);
+        MotoCtrl_SetValue(speed, MOTOR_ALL);
+        int sndlen = strlen(sndbuf) + 1;
+        if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
+      }
       //Yaw = Z;
       //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"recv eur.\n", 10);
     break;
@@ -549,12 +565,23 @@ void GY_UARTPackage_Unpack(void) {
   }
 }
 
+#define PID_KP 1.0f
+#define PID_KI 0.0f
+#define PID_KD 0.0f
+static int16_t Calc_PID(int16_t y) {
+  static int16_t prev_dy = 0, int_sum = 0;
+  int16_t dy = middle - y;
+  int_sum += dy;
+  int16_t out = PID_KP*(float)dy + PID_KI*(float)int_sum + PID_KD*(float)(dy-prev_dy);
+  prev_dy = dy;
+  return out;
+}
+
 #define PIHEDGE 16
-void Calc_Speed(void) {
-  static int16_t prevp = 0, middle = 0;
+int16_t Calc_Speed(void) {
   char sndbuf[256];
   sndbuf[0] = 0;
-  if(!prevp&&!middle) prevp = Pitch;
+  if(!prevp) prevp = Pitch;
   else {
     middle = (prevp+Pitch)/2;
     prevp = Pitch;
@@ -574,6 +601,7 @@ void Calc_Speed(void) {
   sprintf(sndbuf, "[Calc] middle: %d, dp: %d.\n", middle, dp);
   int sndlen = strlen(sndbuf) + 1;
   if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
+  return prevp & middle;
 }
 
 void Bluetooth_Recv(uint8_t cmd) {
