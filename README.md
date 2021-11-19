@@ -9,15 +9,15 @@
 
 <table>
 	<tr>
-		<td><center><img src="imgs/car_above.jpg">上面</center></td>
-		<td><center><img src="imgs/car_below.jpg">底面</center></td>
-        <td><center><img src="imgs/car_core.jpg">核心</center></td>
+		<td><img src="imgs/car_above.jpg"><center>上面</center></td>
+		<td><img src="imgs/car_below.jpg"><center>底面</center></td>
+        <td><img src="imgs/car_core.jpg"><center>核心</center></td>
 	</tr>
 </table>
 
 <table>
 	<tr>
-		<td><center><img src="imgs/car_side.jpg">侧面</center></td>
+		<td><img src="imgs/car_side.jpg"><center>侧面</center></td>
 	</tr>
 </table>
 
