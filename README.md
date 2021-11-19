@@ -9,12 +9,12 @@
 
 <table>
 	<tr>
-		<td><center><img src="imgs/car_above.jpg" width = "480">上面</center></td>
-		<td><center><img src="imgs/car_below.jpg" width = "480">底面</center></td>
-        <td><center><img src="imgs/car_core.jpg" width = "480">核心</center></td>
+		<td><center><img src="imgs/car_above.jpg" width = "300">上面</center></td>
+		<td><center><img src="imgs/car_below.jpg" width = "300">底面</center></td>
+        <td><center><img src="imgs/car_core.jpg" width = "300">核心</center></td>
 	</tr>
     <tr>
-		<td><center><img src="imgs/car_side.jpg">侧面</center></td>
+		<td><center><img src="imgs/car_side.jpg" width = "640">侧面</center></td>
 	</tr>
 </table>
 
