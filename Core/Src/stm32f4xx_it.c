@@ -68,9 +68,8 @@ extern uint8_t     USART2_SendBuff[USART2_SEND_LEN_MAX];
 extern uint8_t     USART2_RecvBuff[USART2_RECV_LEN_MAX];
 //extern uint8_t     UserRecvBuff2[USART2_RECV_LEN_MAX];
 
-extern BTSTAT bs;
 extern int16_t speed1, speed2, tick;
-extern uint8_t isunstable, isinpid, isinit;
+extern uint8_t isinit;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -268,26 +267,6 @@ void USART2_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-  static uint8_t has_changed_tick = 0;
-  if(htim->Instance == TIM2 && isinit && !bs.isstarted && !isinpid) {
-    char sndbuf[256];
-    sndbuf[0] = 0;
-    if(isunstable) {
-      if(!has_changed_tick) {
-        has_changed_tick = 1;
-        tick = CIRCLE_TICKS-64;
-        sprintf(sndbuf, "[Tick] change tick in unstable.\n");
-      }
-    } else if(has_changed_tick) {
-      has_changed_tick = 0;
-      sprintf(sndbuf, "[Tick] reset flag.\n");
-    }
-    int sndlen = strlen(sndbuf) + 1;
-    if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
-  }
-}
-
 //
 //  HAL_UART_RxCpltCallback 串口接收中断处理函数
 //

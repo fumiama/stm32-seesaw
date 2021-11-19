@@ -553,6 +553,7 @@ void GY_UARTPackage_Unpack(void) {
             MotoCtrl_SetValue(0, MOTOR_ALL);
             HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] unstable.\n", 18);
             if(!not_frist_init) not_frist_init = 1;
+            tick = CIRCLE_TICKS-64;
           }
         } else if(isunstable && stables++>64) {
           isunstable = stables =  0;
