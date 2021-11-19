@@ -43,7 +43,6 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-extern uint8_t isinit;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -71,7 +70,7 @@ extern uint8_t     USART2_RecvBuff[USART2_RECV_LEN_MAX];
 
 extern BTSTAT bs;
 extern int16_t speed1, speed2, tick;
-extern uint8_t isunstable, isinpid;
+extern uint8_t isunstable, isinpid, isinit, isindiradj;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -282,7 +281,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
       }
     } else if(has_changed_tick) {
       has_changed_tick = 0;
-      sprintf(sndbuf, "[Tick] reset has_changed_tick.\n");
+      sprintf(sndbuf, "[Tick] reset flag.\n");
     }
     int sndlen = strlen(sndbuf) + 1;
     if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
@@ -338,15 +337,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
               MotoCtrl_SetValue(0, MOTOR_ALL);
               isinit = 0;
               speed1 = 50; speed2 = 24;
-            } else {
-              GY_UART_Init();
-              HAL_Delay(1024);
-              isinit = 1;
+            }
+            else {
+              isinit = isindiradj = 1;
               MotoCtrl_SetValue(speed1, MOTOR_1);
               MotoCtrl_SetValue(speed2, MOTOR_2);
-              HAL_Delay(1024);
-              GY_UART_Switch();
-              HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[Init] switch to ro.\n", 21);
             }
             HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin);
           }

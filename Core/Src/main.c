@@ -64,6 +64,15 @@
 #define CMD_LOCK  '+'
 
 #define RO_RATE (CIRCLE_TICKS>>1)
+
+#define CALC_SPEED_PIHEDGE 16
+
+#define PID_KP 0.032f
+#define PID_KI 0.0f
+#define PID_KD 0.09f
+#define PID_KPS 0.02f
+#define PID_KIS 0.0f
+#define PID_KDS 0.07f
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -105,13 +114,13 @@ int16_t   MgZ        = 0;
 int16_t   Roll       = 0;		//欧拉角值*100
 */
 // pitch 小于 0 说明向下倾斜
-int16_t   Pitch      = 0;
-int16_t   Yaw        = 0;
+//int16_t   Pitch      = 0;
+//int16_t   Yaw        = 0;
 
 BTSTAT bs;
-int16_t speed1 = 50, speed2 = 24, tick = CIRCLE_TICKS-128;
-uint8_t isunstable = 0, isinpid = 0, isinit = 0;
-static int16_t middle = 0, prevp = 0;
+int16_t speed1 = 50, speed2 = 24, tick = CIRCLE_TICKS-128, eurcntr = 0;
+uint8_t isunstable = 0, isinpid = 0, isinit = 0, isindiradj = 0;
+static int16_t pmid = 0, ymid = 0, prevp = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -123,7 +132,8 @@ static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 static int16_t Calc_PID(int16_t y);
-static int Calc_Speed(void);
+static int Calc_Speed(int16_t y);
+static int Calc_Direction(int16_t z);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -178,6 +188,7 @@ int main(void)
   HAL_UART_Receive_IT(&huart2, (uint8_t *)USART2_RecvBuff, USART2_RECV_LEN_MAX);
 
   MotoCtrl_SetValue(0, MOTOR_ALL);
+  GY_UART_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -502,7 +513,6 @@ void GY_UART_Init(void) {
 }
 
 void GY_UART_Switch(void) {
-  //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"switch.\n", 8);
   HAL_UART_Transmit_IT(&huart1, (uint8_t*)(GY_T_EUR GY_T_RO), sizeof(GY_T_EUR GY_T_RO)-1);
 }
 
@@ -523,7 +533,7 @@ void GY_UARTPackage_Unpack(void) {
   sndbuf[0] = 0;
   //int16_t X = __builtin_bswap16(*(uint16_t*)(rawd));
   int16_t Y = __builtin_bswap16(*(uint16_t*)(rawd+2));
-  //int16_t Z = __builtin_bswap16(*(uint16_t*)(rawd+4));
+  int16_t Z = __builtin_bswap16(*(uint16_t*)(rawd+4));
   switch(gf->Type) {
     case GY_ACC:
       //AccX = X; AccY = Y; AccZ = Z;
@@ -561,22 +571,58 @@ void GY_UARTPackage_Unpack(void) {
       //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"recv mg.\n", 9);
     break;
     case GY_EUR:
-      //Roll = X;
-      Pitch = Y;
-      if(isinpid) {
+      //Roll = X; Pitch = Y; Yaw = Z;
+      if(!isinit) {
+        if(~eurcntr) {
+          if(!eurcntr) {
+            if(Y) eurcntr++;
+          }
+          if(eurcntr) {
+            if(eurcntr == 64) {
+              pmid = Y; ymid = Z;
+              sprintf(sndbuf, "[GyUR] init pmid: %d, ymid: %d.\n", Y, Z);
+            } else if(eurcntr > 64) {
+              pmid = (pmid+Y)/2;
+              ymid = (ymid+Z)/2;
+            }
+            if(eurcntr++>128) {
+              sprintf(sndbuf, "[GyUR] fin pmid: %d, ymid: %d.\n", pmid, ymid);
+              HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin); // 灯灭
+              eurcntr = -1;
+            }
+          }
+        }
+      }
+      else if(isindiradj) {
+        if(Y-pmid>16) { // 抬头
+          if(Calc_Direction(Z)) { // 回归正向
+            GY_UART_Switch(); // 切换到 RO
+            isindiradj = 0;
+            sprintf(sndbuf, "[GyUR] quit dir, switch to ro.\n");
+          }
+          MotoCtrl_SetValue(speed1, MOTOR_1);
+          MotoCtrl_SetValue(speed2, MOTOR_2);
+        }
+      }
+      else if(isinpid) {
         speed = Calc_PID(Y);
         if(!speed) {
-          if(stables++>64) {
-            //isinpid = middle = prevp = 0;
-            //GY_UART_Switch();  // 切换到 RO
+          if(stables++>500) { // 保持 10s
+            isinpid = stables = prevp = 0;
+            speed1 = 50; speed2 = 24;
+            GY_UART_Switch();  // 切换到 RO
+            MotoCtrl_SetValue(-speed1, MOTOR_1);
+            MotoCtrl_SetValue(-speed2, MOTOR_2);
+            sprintf(sndbuf, "[GyUR] quit pid, switch to ro.\n");
           }
         } else stables = 0;
         sprintf(sndbuf, "[GyUR] speed: %d.\n", speed);
         MotoCtrl_SetValue(speed, MOTOR_ALL);
-      } else if(not_frist_init && !bs.isstarted && !isunstable) {
+      }
+      else if(not_frist_init && !bs.isstarted && !isunstable) {
         tmod = tick++&(CIRCLE_TICKS-1);
         if(!tmod) {
-          isinpid = Calc_Speed();
+          isinpid = Calc_Speed(Y);
           if(!isinpid) {
             GY_UART_Switch();  // 切换到 RO
             MotoCtrl_SetValue(speed1, MOTOR_1);
@@ -589,7 +635,6 @@ void GY_UARTPackage_Unpack(void) {
           }
         }
       }
-      //Yaw = Z;
       //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"recv eur.\n", 10);
     break;
     default: break;
@@ -598,16 +643,10 @@ void GY_UARTPackage_Unpack(void) {
   if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
 }
 
-#define PID_KP 0.032f
-#define PID_KI 0.0f
-#define PID_KD 0.09f
-#define PID_KPS 0.02f
-#define PID_KIS 0.0f
-#define PID_KDS 0.07f
 static int16_t Calc_PID(int16_t y) {
   static int16_t prev_dy = 0, int_sum = 0;
   static uint8_t stables = 0;
-  int16_t dy = y - middle, out;
+  int16_t dy = y - pmid, out;
   int_sum += dy;
   if(stables>64) {
     out = PID_KPS*(float)dy + PID_KIS*(float)int_sum + PID_KDS*(float)(dy-prev_dy);
@@ -620,20 +659,30 @@ static int16_t Calc_PID(int16_t y) {
   return out;
 }
 
-#define PIHEDGE 16
-int Calc_Speed(void) {
-  char sndbuf[256];
-  sndbuf[0] = 0;
-  if(!prevp) prevp = Pitch;
-  else {
-    middle = (prevp+Pitch)/2;
-    prevp = Pitch;
+static int Calc_Direction(int16_t z) {
+  int16_t dz = z-ymid;
+  if(dz>-4||dz<4) {
+    speed1 = 50; speed2 = 24;
     return 1;
   }
-  int16_t dp = Pitch-middle;
-  Pitch = 0;
+  speed1 = 5*dz;
+  speed2 = 12*dz/5; // 2.4*dz
+  return 0;
+}
+
+int Calc_Speed(int16_t y) {
+  char sndbuf[256];
+  sndbuf[0] = 0;
+  if(!prevp) prevp = y;
+  else {
+    pmid = (prevp+y)/2;
+    prevp = y;
+    return 1;
+  }
+  int16_t dp = y-pmid;
+  y = 0;
   int16_t d1 = 0, d2 = 0;
-  if(dp<-PIHEDGE||dp>PIHEDGE) {
+  if(dp<-CALC_SPEED_PIHEDGE||dp>CALC_SPEED_PIHEDGE) {
     if(dp > 0) {
       d1=50; d2=24;
     }
@@ -643,7 +692,7 @@ int Calc_Speed(void) {
   }
   speed1 = d1;
   speed2 = d2;
-  sprintf(sndbuf, "[Calc] middle: %d, dp: %d.\n", middle, dp);
+  sprintf(sndbuf, "[Calc] pmid: %d, dp: %d.\n", pmid, dp);
   int sndlen = strlen(sndbuf) + 1;
   if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
   return 0;
