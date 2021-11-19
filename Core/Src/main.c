@@ -576,16 +576,18 @@ void GY_UARTPackage_Unpack(void) {
     case GY_EUR:
       //Roll = X; Pitch = Y; Yaw = Z;
       if(isonexit) {
-        if(isonexit>64) {
-          tmod = Y-pgnd;
-          if(tmod>-4&&tmod<4) {
-            tmod = isonexit = 0;
-            speed1 = 50; speed2 = 24;
-            MotoCtrl_SetValue(0, MOTOR_ALL);
-            sprintf(sndbuf, "[GyUR] program finished.\n");
-            HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin); // µÆÁÁ
-          }
-        } else isonexit++;
+        if(~isonexit) {
+          if(isonexit>64) {
+            tmod = Y-pgnd;
+            if(tmod>-4&&tmod<4) {
+              tmod = 0;
+              isonexit = -1;
+              speed1 = 50; speed2 = 24;
+              MotoCtrl_SetValue(0, MOTOR_ALL);
+              sprintf(sndbuf, "[GyUR] program finished.\n");
+            }
+          } else isonexit++;
+        } else HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin); // µÆÉÁ
       }
       if(!isinit) {
         if(~eurcntr) {
@@ -618,7 +620,6 @@ void GY_UARTPackage_Unpack(void) {
           }
           MotoCtrl_SetValue(speed1, MOTOR_1);
           MotoCtrl_SetValue(speed2, MOTOR_2);
-          //HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin); // µÆÉÁ
         }
       }
       else if(isinpid) {
@@ -631,8 +632,8 @@ void GY_UARTPackage_Unpack(void) {
             MotoCtrl_SetValue(-speed1, MOTOR_1);
             MotoCtrl_SetValue(-speed2, MOTOR_2);
             sprintf(sndbuf, "[GyUR] quit pid, on exit.\n");
-            HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin); // µÆÃð
           }
+          HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin); // µÆÉÁ
         } else {
           stables = 0;
           sprintf(sndbuf, "[GyUR] speed: %d.\n", speed);
