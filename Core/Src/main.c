@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -63,7 +64,7 @@
 #define CMD_STOP  '-'
 #define CMD_LOCK  '+'
 
-#define RO_RATE (CIRCLE_TICKS>>1)
+#define RO_RATE CIRCLE_TICKS
 
 #define CALC_SPEED_PIHEDGE 16
 
@@ -72,7 +73,7 @@
 #define PID_KD 0.09f
 #define PID_KPS 0.03f
 #define PID_KIS 0.0f
-#define PID_KDS 0.07f
+#define PID_KDS 0.08f
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -121,7 +122,7 @@ BTSTAT bs;
 int16_t speed1 = 50, speed2 = 24, tick = CIRCLE_TICKS-64, eurcntr = 0;
 uint8_t isunstable = 0, isinpid = 0, isinit = 0;
 static uint8_t isonexit = 0, isindiradj = 1;
-static int16_t pmid = 0, ymid = 0, prevp = 0;
+static int16_t pmid = 0, pgnd = 0, ymid = 0, prevp = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -576,7 +577,7 @@ void GY_UARTPackage_Unpack(void) {
       //Roll = X; Pitch = Y; Yaw = Z;
       if(isonexit) {
         if(isonexit>64) {
-          tmod = Y-pmid;
+          tmod = Y-pgnd;
           if(tmod>-4&&tmod<4) {
             tmod = isonexit = 0;
             speed1 = 50; speed2 = 24;
@@ -600,6 +601,7 @@ void GY_UARTPackage_Unpack(void) {
               ymid = (ymid+Z)/2;
             }
             if(eurcntr++>128) {
+              pgnd = pmid;
               sprintf(sndbuf, "[GyUR] fin pmid: %d, ymid: %d.\n", pmid, ymid);
               HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin); // µÆÃð
               eurcntr = -1;
@@ -671,7 +673,7 @@ static int16_t Calc_PID(int16_t y) {
   static uint8_t stables = 0;
   int16_t dy = y - pmid, out;
   int_sum += dy;
-  if(stables>256) {
+  if(stables>128) {
     out = PID_KPS*(float)dy + PID_KIS*(float)int_sum + PID_KDS*(float)(dy-prev_dy);
   } else {
     out = PID_KP*(float)dy + PID_KI*(float)int_sum + PID_KD*(float)(dy-prev_dy);
@@ -683,35 +685,26 @@ static int16_t Calc_PID(int16_t y) {
 }
 
 static int Calc_Direction(int16_t z) {
-  int16_t dz = z-ymid-8; // Æ«ÒÆÐ¡ÐÞÕý
+  int16_t ds, s1, s2, dz = z-ymid;
   if(dz>-16&&dz<16) {
     speed1 = 50; speed2 = 24;
     return 1;
   }
   if(dz>0) {
-    if(dz<32) {
-      speed1 = -dz/4;
-      speed2 = dz*2;
-    } else if(dz<128) {
-      speed1 = -dz/32;
-      speed2 = dz/2;
-    } else {
-      speed1 = -dz/64;
-      speed2 = dz/32;
-    }
+    ds = 1.2*sqrt(dz);
+    s1 = -ds+20;
+    s2 = ds+20;
   } else {
-    dz = -dz;
-    if(dz<32) {
-      speed1 = dz*2;
-      speed2 = -dz/4;
-    } else if(dz<128) {
-      speed1 = dz/2;
-      speed2 = -dz/32;
-    } else {
-      speed1 = dz/32;
-      speed2 = -dz/64;
-    }
+    ds = 1.2*sqrt(-dz);
+    s1 = ds+20;
+    s2 = -ds+20;
   }
+  ds = s1-speed1;
+  if(ds>10) speed1 += 10;
+  else if(ds<-10) speed1 -= 10;
+  ds = s2-speed2;
+  if(ds>10) speed2 += 10;
+  else if(ds<-10) speed2 -= 10;
   return 0;
 }
 
