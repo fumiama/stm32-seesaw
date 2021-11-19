@@ -14,17 +14,17 @@
         <td><img src="imgs/car_core.jpg"></td>
 	</tr>
     <tr>
-		<td>上面</td>
-		<td>底面</td>
-        <td>核心</td>
+		<td><center>上面</center></td>
+		<td><center>底面</center></td>
+        <td><center>核心</center></td>
 	</tr>
 </table>
 <table>
 	<tr>
-		<td><img src="imgs/car_side.jpg">侧面</td>
+		<td><img src="imgs/car_side.jpg"></td>
 	</tr>
     <tr>
-		<td>侧面</td>
+		<td><center>侧面</center></td>
 	</tr>
 </table>
 
