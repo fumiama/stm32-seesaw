@@ -60,4 +60,4 @@
 4. 使跷跷板处于平衡状态，然后保持平衡 10s，并给出明显的平衡指示
 5. 60s 内回到 A 端，并给出明显的到达指示
 
-![seesaw](imgs/seesaw.jpg)
+![seesaw](imgs/seesaw.png)
