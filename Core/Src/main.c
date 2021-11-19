@@ -67,10 +67,10 @@
 
 #define CALC_SPEED_PIHEDGE 16
 
-#define PID_KP 0.032f
+#define PID_KP 0.04f
 #define PID_KI 0.0f
 #define PID_KD 0.09f
-#define PID_KPS 0.02f
+#define PID_KPS 0.03f
 #define PID_KIS 0.0f
 #define PID_KDS 0.07f
 /* USER CODE END PD */
@@ -118,8 +118,9 @@ int16_t   Roll       = 0;		//欧拉角值*100
 //int16_t   Yaw        = 0;
 
 BTSTAT bs;
-int16_t speed1 = 50, speed2 = 24, tick = CIRCLE_TICKS-128, eurcntr = 0;
-uint8_t isunstable = 0, isinpid = 0, isinit = 0, isindiradj = 0;
+int16_t speed1 = 50, speed2 = 24, tick = CIRCLE_TICKS-64, eurcntr = 0;
+uint8_t isunstable = 0, isinpid = 0, isinit = 0;
+static uint8_t isonexit = 0, isindiradj = 1;
 static int16_t pmid = 0, ymid = 0, prevp = 0;
 /* USER CODE END PV */
 
@@ -188,6 +189,7 @@ int main(void)
   HAL_UART_Receive_IT(&huart2, (uint8_t *)USART2_RecvBuff, USART2_RECV_LEN_MAX);
 
   MotoCtrl_SetValue(0, MOTOR_ALL);
+  HAL_Delay(1024);
   GY_UART_Init();
   /* USER CODE END 2 */
 
@@ -521,7 +523,6 @@ void GY_UARTPackage_Unpack(void) {
   static uint8_t not_frist_init = 0;
   GY953Frame* gf = (GY953Frame*)UserRecvBuff1;
   unsigned char s = 0;
-  if(!isinit) return;
   for(s = 0; s < USART1_RECV_LEN_MAX-5; s++) {
     if(gf->Head != 0x5a5a) gf = (GY953Frame*)(UserRecvBuff1+s);
     else break;
@@ -542,6 +543,7 @@ void GY_UARTPackage_Unpack(void) {
     case GY_RO:
       //GyroX = X; GyroY = Y; GyroZ = Z;
       //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"recv ro.\n", 9);
+      if(!isinit) return;
       if(!isinpid) {
         if(Y>RO_RATE||Y<-RO_RATE) {
           stables = 0;
@@ -551,7 +553,7 @@ void GY_UARTPackage_Unpack(void) {
             HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] unstable.\n", 18);
             if(!not_frist_init) not_frist_init = 1;
           }
-        } else if(isunstable && stables++>128) {
+        } else if(isunstable && stables++>64) {
           isunstable = stables =  0;
           HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] stable.\n", 16);
         } else if(not_frist_init && !bs.isstarted && !isunstable) {
@@ -559,7 +561,7 @@ void GY_UARTPackage_Unpack(void) {
           if(tmod==CIRCLE_TICKS>>1) {
             MotoCtrl_SetValue(0, MOTOR_ALL);
             sprintf(sndbuf, "[GyUR] stop motor.\n");
-          } else if(tmod==CIRCLE_TICKS-128) {
+          } else if(tmod==CIRCLE_TICKS-64) {
             GY_UART_Switch();  // 切换到 EUR
             sprintf(sndbuf, "[GyUR] switch to eur.\n");
           }
@@ -572,6 +574,18 @@ void GY_UARTPackage_Unpack(void) {
     break;
     case GY_EUR:
       //Roll = X; Pitch = Y; Yaw = Z;
+      if(isonexit) {
+        if(isonexit>64) {
+          tmod = Y-pmid;
+          if(tmod>-4&&tmod<4) {
+            tmod = isonexit = 0;
+            speed1 = 50; speed2 = 24;
+            MotoCtrl_SetValue(0, MOTOR_ALL);
+            sprintf(sndbuf, "[GyUR] program finished.\n");
+            HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin); // 灯亮
+          }
+        } else isonexit++;
+      }
       if(!isinit) {
         if(~eurcntr) {
           if(!eurcntr) {
@@ -594,30 +608,39 @@ void GY_UARTPackage_Unpack(void) {
         }
       }
       else if(isindiradj) {
-        if(Y-pmid>16) { // 抬头
+        if(Y-pmid>256) { // 抬头
           if(Calc_Direction(Z)) { // 回归正向
-            GY_UART_Switch(); // 切换到 RO
             isindiradj = 0;
+            GY_UART_Switch(); // 切换到 RO
             sprintf(sndbuf, "[GyUR] quit dir, switch to ro.\n");
           }
           MotoCtrl_SetValue(speed1, MOTOR_1);
           MotoCtrl_SetValue(speed2, MOTOR_2);
+          //HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin); // 灯闪
         }
       }
       else if(isinpid) {
         speed = Calc_PID(Y);
-        if(!speed) {
+        if(speed>-8&&speed<8) {
           if(stables++>500) { // 保持 10s
-            isinpid = stables = prevp = 0;
+            isinpid = stables = isinit = prevp = 0;
+            isonexit = 1;
             speed1 = 50; speed2 = 24;
-            GY_UART_Switch();  // 切换到 RO
             MotoCtrl_SetValue(-speed1, MOTOR_1);
             MotoCtrl_SetValue(-speed2, MOTOR_2);
-            sprintf(sndbuf, "[GyUR] quit pid, switch to ro.\n");
+            sprintf(sndbuf, "[GyUR] quit pid, on exit.\n");
+            HAL_GPIO_TogglePin(LED_IDC_GPIO_Port, LED_IDC_Pin); // 灯灭
           }
-        } else stables = 0;
-        sprintf(sndbuf, "[GyUR] speed: %d.\n", speed);
-        MotoCtrl_SetValue(speed, MOTOR_ALL);
+        } else {
+          stables = 0;
+          sprintf(sndbuf, "[GyUR] speed: %d.\n", speed);
+          if(speed>10||speed<-10) {
+            MotoCtrl_SetValue(speed, MOTOR_ALL);
+          } else {
+            MotoCtrl_SetValue(speed+4, MOTOR_1);
+            MotoCtrl_SetValue(speed-4, MOTOR_2);
+          }
+        }
       }
       else if(not_frist_init && !bs.isstarted && !isunstable) {
         tmod = tick++&(CIRCLE_TICKS-1);
@@ -648,7 +671,7 @@ static int16_t Calc_PID(int16_t y) {
   static uint8_t stables = 0;
   int16_t dy = y - pmid, out;
   int_sum += dy;
-  if(stables>64) {
+  if(stables>256) {
     out = PID_KPS*(float)dy + PID_KIS*(float)int_sum + PID_KDS*(float)(dy-prev_dy);
   } else {
     out = PID_KP*(float)dy + PID_KI*(float)int_sum + PID_KD*(float)(dy-prev_dy);
@@ -660,13 +683,35 @@ static int16_t Calc_PID(int16_t y) {
 }
 
 static int Calc_Direction(int16_t z) {
-  int16_t dz = z-ymid;
-  if(dz>-4||dz<4) {
+  int16_t dz = z-ymid-8; // 偏移小修正
+  if(dz>-16&&dz<16) {
     speed1 = 50; speed2 = 24;
     return 1;
   }
-  speed1 = 5*dz;
-  speed2 = 12*dz/5; // 2.4*dz
+  if(dz>0) {
+    if(dz<32) {
+      speed1 = -dz/4;
+      speed2 = dz*2;
+    } else if(dz<128) {
+      speed1 = -dz/32;
+      speed2 = dz/2;
+    } else {
+      speed1 = -dz/64;
+      speed2 = dz/32;
+    }
+  } else {
+    dz = -dz;
+    if(dz<32) {
+      speed1 = dz*2;
+      speed2 = -dz/4;
+    } else if(dz<128) {
+      speed1 = dz/2;
+      speed2 = -dz/32;
+    } else {
+      speed1 = dz/32;
+      speed2 = -dz/64;
+    }
+  }
   return 0;
 }
 

@@ -70,7 +70,7 @@ extern uint8_t     USART2_RecvBuff[USART2_RECV_LEN_MAX];
 
 extern BTSTAT bs;
 extern int16_t speed1, speed2, tick;
-extern uint8_t isunstable, isinpid, isinit, isindiradj;
+extern uint8_t isunstable, isinpid, isinit;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -276,7 +276,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     if(isunstable) {
       if(!has_changed_tick) {
         has_changed_tick = 1;
-        tick = CIRCLE_TICKS-128;
+        tick = CIRCLE_TICKS-64;
         sprintf(sndbuf, "[Tick] change tick in unstable.\n");
       }
     } else if(has_changed_tick) {
@@ -339,7 +339,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
               speed1 = 50; speed2 = 24;
             }
             else {
-              isinit = isindiradj = 1;
+              isinit = 1;
               MotoCtrl_SetValue(speed1, MOTOR_1);
               MotoCtrl_SetValue(speed2, MOTOR_2);
             }

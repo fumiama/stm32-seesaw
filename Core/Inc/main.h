@@ -107,7 +107,7 @@ typedef struct {              //GY953传感器的  数据帧结构体
 } GY953Frame;
 
 // CIRCLE_TICKS 必须大于 128
-#define CIRCLE_TICKS 512
+#define CIRCLE_TICKS 256
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
