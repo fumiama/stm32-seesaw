@@ -70,7 +70,7 @@ extern uint8_t     USART2_RecvBuff[USART2_RECV_LEN_MAX];
 //extern uint8_t     UserRecvBuff2[USART2_RECV_LEN_MAX];
 
 extern BTSTAT bs;
-extern int16_t speed1, speed2, rate, tick;
+extern int16_t speed1, speed2, tick;
 extern uint8_t isunstable, isinpid;
 /* USER CODE END EV */
 
@@ -274,10 +274,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
   if(htim->Instance == TIM2 && isinit && !bs.isstarted && !isinpid) {
     char sndbuf[256];
     sndbuf[0] = 0;
-    if(isunstable && !has_changed_tick) {
-      has_changed_tick = 0;
-      tick = CIRCLE_TICKS-128;
-      sprintf(sndbuf, "[Tick] change tick in unstable.\n");
+    if(isunstable) {
+      if(!has_changed_tick) {
+        has_changed_tick = 1;
+        tick = CIRCLE_TICKS-128;
+        sprintf(sndbuf, "[Tick] change tick in unstable.\n");
+      }
     } else if(has_changed_tick) {
       has_changed_tick = 0;
       sprintf(sndbuf, "[Tick] reset has_changed_tick.\n");
@@ -337,7 +339,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
               isinit = 0;
               speed1 = 50; speed2 = 24;
             } else {
-              rate = CIRCLE_TICKS>>1;
               GY_UART_Init();
               HAL_Delay(1024);
               isinit = 1;

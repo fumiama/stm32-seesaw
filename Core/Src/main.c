@@ -62,6 +62,8 @@
 #define CMD_STAT  '#'
 #define CMD_STOP  '-'
 #define CMD_LOCK  '+'
+
+#define RO_RATE (CIRCLE_TICKS>>1)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -107,9 +109,8 @@ int16_t   Pitch      = 0;
 int16_t   Yaw        = 0;
 
 BTSTAT bs;
-int16_t speed1 = 50, speed2 = 24;
+int16_t speed1 = 50, speed2 = 24, tick = CIRCLE_TICKS-128;
 uint8_t isunstable = 0, isinpid = 0, isinit = 0;
-int16_t rate, tick = CIRCLE_TICKS-128;
 static int16_t middle = 0, prevp = 0;
 /* USER CODE END PV */
 
@@ -532,7 +533,7 @@ void GY_UARTPackage_Unpack(void) {
       //GyroX = X; GyroY = Y; GyroZ = Z;
       //HAL_UART_Transmit_IT(&huart2, (uint8_t*)"recv ro.\n", 9);
       if(!isinpid) {
-        if(Y>rate||Y<-rate) {
+        if(Y>RO_RATE||Y<-RO_RATE) {
           stables = 0;
           if(!isunstable) {
             isunstable = 1;
@@ -540,7 +541,7 @@ void GY_UARTPackage_Unpack(void) {
             HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] unstable.\n", 18);
             if(!not_frist_init) not_frist_init = 1;
           }
-        } else if(isunstable && stables++>64) {
+        } else if(isunstable && stables++>128) {
           isunstable = stables =  0;
           HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] stable.\n", 16);
         } else if(not_frist_init && !bs.isstarted && !isunstable) {
@@ -566,10 +567,10 @@ void GY_UARTPackage_Unpack(void) {
         speed = Calc_PID(Y);
         if(!speed) {
           if(stables++>64) {
-            isinpid = middle = prevp = 0;
-            GY_UART_Switch();  // ÇÐ»»µ½ RO
+            //isinpid = middle = prevp = 0;
+            //GY_UART_Switch();  // ÇÐ»»µ½ RO
           }
-        } else tmod = 0;
+        } else stables = 0;
         sprintf(sndbuf, "[GyUR] speed: %d.\n", speed);
         MotoCtrl_SetValue(speed, MOTOR_ALL);
       } else if(not_frist_init && !bs.isstarted && !isunstable) {
@@ -597,14 +598,24 @@ void GY_UARTPackage_Unpack(void) {
   if(sndlen > 1) HAL_UART_Transmit_IT(&huart2, (uint8_t*)sndbuf, sndlen);
 }
 
-#define PID_KP 0.1f
+#define PID_KP 0.032f
 #define PID_KI 0.0f
-#define PID_KD 0.04f
+#define PID_KD 0.09f
+#define PID_KPS 0.02f
+#define PID_KIS 0.0f
+#define PID_KDS 0.07f
 static int16_t Calc_PID(int16_t y) {
   static int16_t prev_dy = 0, int_sum = 0;
-  int16_t dy = y - middle;
+  static uint8_t stables = 0;
+  int16_t dy = y - middle, out;
   int_sum += dy;
-  int16_t out = PID_KP*(float)dy + PID_KI*(float)int_sum + PID_KD*(float)(dy-prev_dy);
+  if(stables>64) {
+    out = PID_KPS*(float)dy + PID_KIS*(float)int_sum + PID_KDS*(float)(dy-prev_dy);
+  } else {
+    out = PID_KP*(float)dy + PID_KI*(float)int_sum + PID_KD*(float)(dy-prev_dy);
+    if(out>=-2&&out<=2) stables++;
+    else stables = 0;
+  }
   prev_dy = dy;
   return out;
 }
