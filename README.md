@@ -5,7 +5,7 @@
 </div>
 
 ## 开发流程
-首先使用`STM32 Cude MX`生成带`Makefile`的HAL库工程模版，然后修改`Core`文件夹下的用户代码，使用`make`命令编译，在`build`目录即可获得`seesaw.elf`等文件，接下来按下`BOOT0+RESET`使单片机进入下载模式，使用usb将其连接到电脑，用`STM32 Cube Programmer`将编译好的程序烧录进单片机。
+首先使用`STM32 Cube MX`生成带`Makefile`的HAL库工程模版，然后修改`Core`文件夹下的用户代码，使用`make`命令编译，在`build`目录即可获得`seesaw.elf`等文件，接下来按下`BOOT0+RESET`使单片机进入下载模式，使用usb将其连接到电脑，用`STM32 Cube Programmer`将编译好的程序烧录进单片机。
 
 ## 硬件架构
 小车为三轮，车身由铝合金框架连接构成，在其上固定有面包板，用杜邦线连接单片机、电机、蓝牙模块、电池盒与传感器，同时用扎线带等固定好分线器（位于侧面与底部）与电源模块（位于底部），具体实物图与分模块说明如下。
@@ -32,7 +32,7 @@
 </table>
 
 ### 1. 单片机
-单片机型号为`STM32F401CCUx`，具体实物如上图。定义其引脚与中断如下，详细可见`seesaw.ioc`，该文件可用`STM32 Cude MX`打开。
+单片机型号为`STM32F401CCUx`，具体实物如上图。定义其引脚与中断如下，详细可见`seesaw.ioc`，该文件可用`STM32 Cube MX`打开。
 
 ![pins](imgs/pins.jpg)
 
