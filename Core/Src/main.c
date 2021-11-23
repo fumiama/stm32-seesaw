@@ -504,10 +504,12 @@ void GY_UARTPackage_Unpack(void) {
             if(!not_frist_init) not_frist_init = 1;
             tick = CIRCLE_TICKS-64;
           }
-        } else if(isunstable && stables++>64) {
-          isunstable = stables =  0;
-          HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] stable.\n", 16);
-        } else if(not_frist_init && !bs.isstarted && !isunstable) {
+        } else if(isunstable) {
+          if(stables++>64) {
+            isunstable = stables =  0;
+            HAL_UART_Transmit_IT(&huart2, (uint8_t*)"[State] stable.\n", 16);
+          }
+        } else if(not_frist_init && !bs.isstarted) {
           tmod = tick++&(CIRCLE_TICKS-1);
           if(tmod==CIRCLE_TICKS>>1) {
             MotoCtrl_SetValue(0, MOTOR_ALL);
